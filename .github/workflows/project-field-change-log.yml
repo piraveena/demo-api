@@ -1,0 +1,38 @@
+name: Log project field changes
+
+on:
+  # GitHub Actions requires a literal cron expression here (no variables/expressions
+  # allowed), so to change the interval later just edit this line directly.
+  # 5 min is for testing; '0 * * * *' (hourly) is a reasonable steady-state value.
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  track-project-fields:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect field changes and comment on linked issues/PRs
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PROJECT_PAT }}
+          script: |
+            const track = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/track-project-field-changes.js`);
+            await track({ github, context, core });
+
+      - name: Commit updated snapshot
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/project-state/project-2-snapshot.json
+          if git diff --cached --quiet; then
+            echo "No snapshot changes to commit"
+          else
+            git commit -m "chore: update project field snapshot"
+            git push
+          fi
