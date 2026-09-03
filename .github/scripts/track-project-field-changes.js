@@ -8,7 +8,7 @@ const SNAPSHOT_PATH = path.join(
   '.github/project-state/project-2-snapshot.json'
 );
 
-module.exports = async ({ github, core }) => {
+module.exports = async ({ github, botGithub, core }) => {
   const items = await fetchAllItems(github);
   const current = buildSnapshot(items);
 
@@ -17,9 +17,9 @@ module.exports = async ({ github, core }) => {
     ? JSON.parse(fs.readFileSync(SNAPSHOT_PATH, 'utf8'))
     : {};
 
-  let changes = [];
+  let changedFields = [];
   if (hadPreviousSnapshot) {
-    changes = await commentOnChanges({ github, core, previous, current });
+    changedFields = await commentOnChanges({ botGithub, core, previous, current });
   } else {
     core.info('No previous snapshot found; recording baseline without posting comments.');
   }
@@ -27,12 +27,11 @@ module.exports = async ({ github, core }) => {
   fs.mkdirSync(path.dirname(SNAPSHOT_PATH), { recursive: true });
   fs.writeFileSync(SNAPSHOT_PATH, JSON.stringify(current, null, 2) + '\n');
 
-  core.setOutput('has-changes', changes.length > 0 ? 'true' : 'false');
   core.setOutput(
-    'changes-summary',
-    changes
-      .map((c) => `${c.repo}#${c.number} ${c.field}: ${c.oldValue} -> ${c.newValue} (by @${c.actor})`)
-      .join('\n')
+    'commit-message',
+    changedFields.length === 1
+      ? `Update field ${changedFields[0]}`
+      : `Update fields ${changedFields.join(', ')}`
   );
 };
 
@@ -126,8 +125,8 @@ function extractValue(fieldValue) {
   }
 }
 
-async function commentOnChanges({ github, core, previous, current }) {
-  const allChanges = [];
+async function commentOnChanges({ botGithub, core, previous, current }) {
+  const changedFields = new Set();
 
   for (const [itemId, item] of Object.entries(current)) {
     const before = previous[itemId];
@@ -154,17 +153,15 @@ async function commentOnChanges({ github, core, previous, current }) {
       .map((c) => `- **${c.field}**: ${c.oldValue} → ${c.newValue} (changed by @${c.actor})`)
       .join('\n');
     core.info(`Posting field-change comment on ${item.repo}#${item.number}`);
-    await github.rest.issues.createComment({
+    await botGithub.rest.issues.createComment({
       owner,
       repo,
       issue_number: item.number,
       body: `**Project field update**\n${body}`,
     });
 
-    for (const c of itemChanges) {
-      allChanges.push({ repo: item.repo, number: item.number, ...c });
-    }
+    for (const c of itemChanges) changedFields.add(c.field);
   }
 
-  return allChanges;
+  return [...changedFields];
 }

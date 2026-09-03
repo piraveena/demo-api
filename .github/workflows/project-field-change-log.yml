@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: write
+  issues: write
+  pull-requests: write
 
 jobs:
   track-project-fields:
@@ -20,25 +22,26 @@ jobs:
       - name: Detect field changes and comment on linked issues/PRs
         id: track
         uses: actions/github-script@v7
+        env:
+          BOT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           github-token: ${{ secrets.PROJECT_PAT }}
           script: |
+            const { getOctokit } = require('@actions/github');
+            const botGithub = getOctokit(process.env.BOT_TOKEN);
             const track = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/track-project-field-changes.js`);
-            await track({ github, context, core });
+            await track({ github, botGithub, context, core });
 
       - name: Commit updated snapshot
         env:
-          CHANGES_SUMMARY: ${{ steps.track.outputs.changes-summary }}
+          COMMIT_MESSAGE: ${{ steps.track.outputs.commit-message }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .github/project-state/project-2-snapshot.json
           if git diff --cached --quiet; then
             echo "No snapshot changes to commit"
-          elif [ -n "$CHANGES_SUMMARY" ]; then
-            git commit -m "chore: update project field snapshot" -m "$CHANGES_SUMMARY"
-            git push
           else
-            git commit -m "chore: update project field snapshot"
+            git commit -m "${COMMIT_MESSAGE:-Update project field snapshot}"
             git push
           fi
