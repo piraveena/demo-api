@@ -8,7 +8,7 @@ const SNAPSHOT_PATH = path.join(
   '.github/project-state/project-2-snapshot.json'
 );
 
-module.exports = async ({ github, botGithub, core }) => {
+module.exports = async ({ github, core }) => {
   const items = await fetchAllItems(github);
   const current = buildSnapshot(items);
 
@@ -17,22 +17,16 @@ module.exports = async ({ github, botGithub, core }) => {
     ? JSON.parse(fs.readFileSync(SNAPSHOT_PATH, 'utf8'))
     : {};
 
-  let changedFields = [];
+  const botGithubClient = new github.constructor({ auth: process.env.BOT_TOKEN });
+
   if (hadPreviousSnapshot) {
-    changedFields = await commentOnChanges({ botGithub, core, previous, current });
+    await commentOnChanges({ botGithub: botGithubClient, core, previous, current });
   } else {
     core.info('No previous snapshot found; recording baseline without posting comments.');
   }
 
   fs.mkdirSync(path.dirname(SNAPSHOT_PATH), { recursive: true });
   fs.writeFileSync(SNAPSHOT_PATH, JSON.stringify(current, null, 2) + '\n');
-
-  core.setOutput(
-    'commit-message',
-    changedFields.length === 1
-      ? `Update field ${changedFields[0]}`
-      : `Update fields ${changedFields.join(', ')}`
-  );
 };
 
 async function fetchAllItems(github) {
